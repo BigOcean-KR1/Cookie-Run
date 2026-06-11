@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>COOKIE DASH</title>
+<style>
+:root{
+  --sky1:#ffd98a; --sky2:#ff9e6d; --ground:#8a5a33; --ground2:#6e4626;
+  --cookie:#c8833c; --jelly:#ff5aa0; --ui:#fff;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;overflow:hidden;background:#000;font-family:'Trebuchet MS',sans-serif;touch-action:none}
+canvas{display:block;width:100%;height:100%}
+#hud{position:absolute;top:12px;left:14px;right:14px;display:flex;justify-content:space-between;
+ font-weight:bold;color:#fff;text-shadow:0 2px 0 rgba(0,0,0,.4);pointer-events:none}
+#score{font-size:26px}
+#hpWrap{width:200px;height:18px;background:rgba(0,0,0,.4);border-radius:10px;overflow:hidden;border:2px solid rgba(255,255,255,.6)}
+#hp{height:100%;width:100%;background:linear-gradient(90deg,#ff7a3c,#ffd23c);transition:width .15s}
+#msg{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;align-items:center;
+ background:rgba(40,15,5,.78);color:#fff;text-align:center;z-index:5}
+#msg h1{font-size:46px;color:#ffd23c;text-shadow:0 4px 0 #7a4a10;font-style:italic;letter-spacing:1px}
+#msg p{margin:14px 0 22px;font-size:16px;line-height:1.7;opacity:.95}
+#msg button{font-family:inherit;font-size:22px;font-weight:bold;padding:14px 46px;border:0;border-radius:14px;
+ background:#ffd23c;color:#5c3a0a;cursor:pointer;box-shadow:0 5px 0 #c79a14}
+#msg button:active{transform:translateY(4px);box-shadow:none}
+.hidden{display:none!important}
+#ctrl{position:absolute;bottom:0;left:0;right:0;height:38%;display:flex;pointer-events:none}
+#ctrl div{flex:1;pointer-events:auto;display:flex;align-items:flex-end;justify-content:center;
+ padding-bottom:18px;color:rgba(255,255,255,.55);font-weight:bold;font-size:15px;user-select:none}
+@media (pointer:fine){#ctrl div span{display:none}}
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<div id="hud">
+  <span id="score">0</span>
+  <div id="hpWrap"><div id="hp"></div></div>
+</div>
+<div id="ctrl"><div id="slideZone"><span>⬇ 슬라이드</span></div><div id="jumpZone"><span>⬆ 점프</span></div></div>
+<div id="msg">
+  <h1>🍪 COOKIE DASH</h1>
+  <p>달리는 쿠키! 젤리를 먹고 장애물을 피하세요.<br>
+  체력은 계속 줄어들고, 부딪히면 크게 깎입니다.<br>
+  핑크 젤리 = 점수 / 하트 젤리 = 체력 회복 / ⭐ = 무적 질주!<br><br>
+  🖥 ↑·스페이스 점프(2단) / ↓ 슬라이드<br>📱 오른쪽 터치 점프 / 왼쪽 터치 슬라이드</p>
+  <button id="startBtn">달리기 시작</button>
+</div>
+<script>
+(()=>{
+const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+let W,H,DPR,GROUND;
+function resize(){DPR=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;
+ cv.width=W*DPR;cv.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0);GROUND=H*0.78;}
+addEventListener('resize',resize);resize();
+
+const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+// 플레이어
+const P={x:0,y:0,vy:0,w:46,h:62,jumps:0,sliding:false,hp:100,inv:0,boost:0,run:0,dead:false};
+let speed,dist,score,obs,jellies,parts,clouds,spawnT,jellyT,running=false;
+
+const GRAV=2600,JUMP=-880;
+
+function reset(){
+ P.x=W*0.18;P.y=GROUND;P.vy=0;P.jumps=0;P.sliding=false;P.hp=100;P.inv=0;P.boost=0;P.dead=false;
+ speed=380;dist=0;score=0;obs=[];jellies=[];parts=[];spawnT=1;jellyT=0.5;
+ clouds=[];for(let i=0;i<5;i++)clouds.push({x:Math.random()*W,y:50+Math.random()*H*0.3,s:0.6+Math.random()});
+}
+
+// 입력
+function jump(){
+ if(P.dead)return;
+ if(P.sliding){P.sliding=false;return;}
+ if(P.jumps<2){P.vy=JUMP;P.jumps++;burst(P.x,P.y,'#fff',5);}
+}
+function slideOn(){if(!P.dead&&P.y>=GROUND-1)P.sliding=true;}
+function slideOff(){P.sliding=false;}
+addEventListener('keydown',e=>{
+ if(e.repeat)return;
+ if(e.code==='Space'||e.code==='ArrowUp')jump();
+ if(e.code==='ArrowDown')slideOn();
+});
+addEventListener('keyup',e=>{if(e.code==='ArrowDown')slideOff();});
+const jz=document.getElementById('jumpZone'),sz=document.getElementById('slideZone');
+jz.addEventListener('touchstart',e=>{e.preventDefault();jump();},{passive:false});
+sz.addEventListener('touchstart',e=>{e.preventDefault();slideOn();},{passive:false});
+sz.addEventListener('touchend',slideOff);
+jz.addEventListener('mousedown',jump);
+sz.addEventListener('mousedown',slideOn);
+addEventListener('mouseup',slideOff);
+
+function burst(x,y,c,n){for(let i=0;i<n;i++)parts.push({x,y,vx:(Math.random()-.5)*300,vy:-Math.random()*300,life:.5,c});}
+
+// 스폰
+function spawnObs(){
+ const r=Math.random();
+ if(r<0.45) obs.push({type:'box',x:W+60,y:GROUND,w:44,h:54}); // 점프
+ else if(r<0.75) obs.push({type:'bird',x:W+60,y:GROUND-78,w:54,h:36}); // 슬라이드
+ else obs.push({type:'pit',x:W+60,y:GROUND,w:110,h:0}); // 구덩이
+}
+function spawnJelly(){
+ const r=Math.random();
+ const baseY=GROUND-40-(Math.random()<0.4?90:0);
+ if(r<0.06) jellies.push({type:'star',x:W+40,y:baseY,r:14});
+ else if(r<0.16) jellies.push({type:'heart',x:W+40,y:baseY,r:12});
+ else{ // 젤리 줄
+  const n=4+Math.floor(Math.random()*4);
+  for(let i=0;i<n;i++)jellies.push({type:'pink',x:W+40+i*44,y:baseY,r:10});
+ }
+}
+
+function update(dt){
+ dist+=speed*dt;
+ speed=Math.min(380+dist*0.012,900)*(P.boost>0?1.5:1);
+ P.hp-=dt*2.2; // 자연 감소
+ if(P.boost>0)P.boost-=dt;
+ if(P.inv>0)P.inv-=dt;
+ P.run+=dt*speed*0.03;
+
+ // 물리
+ P.vy+=GRAV*dt;P.y+=P.vy*dt;
+ // 구덩이 체크
+ let onPit=obs.some(o=>o.type==='pit'&&P.x>o.x-10&&P.x<o.x+o.w+10);
+ if(P.y>=GROUND&&!onPit){P.y=GROUND;P.vy=0;P.jumps=0;}
+ if(P.y>H+80){P.hp=0;} // 추락
+
+ // 스폰 타이머
+ spawnT-=dt;jellyT-=dt;
+ if(spawnT<=0){spawnObs();spawnT=(0.9+Math.random()*0.9)*(380/speed)+0.35;}
+ if(jellyT<=0){spawnJelly();jellyT=1.2+Math.random();}
+
+ // 이동
+ obs.forEach(o=>o.x-=speed*dt);obs=obs.filter(o=>o.x+o.w>-50);
+ jellies.forEach(j=>j.x-=speed*dt);jellies=jellies.filter(j=>j.x>-30);
+ clouds.forEach(c=>{c.x-=speed*dt*0.15*c.s;if(c.x<-100)c.x=W+100;});
+ parts=parts.filter(p=>{p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=900*dt;p.life-=dt;return p.life>0;});
+
+ // 충돌 박스
+ const ph=P.sliding?32:P.h;
+ const px=P.x-P.w/2,py=P.y-ph;
+ for(const o of obs){
+  if(o.type==='pit')continue;
+  if(px<o.x+o.w&&px+P.w>o.x&&py<o.y&&py+ph>o.y-o.h){
+   if(P.boost>0){burst(o.x,o.y-20,'#ffd23c',10);o.x=-999;score+=50;}
+   else if(P.inv<=0){P.hp-=22;P.inv=1.2;burst(P.x,P.y-30,'#ff5a5a',8);}
+  }
+ }
+ // 젤리
+ jellies=jellies.filter(j=>{
+  if(Math.abs(j.x-P.x)<P.w/2+j.r&&j.y>py-j.r&&j.y<P.y+j.r){
+   if(j.type==='pink'){score+=10;P.hp=Math.min(100,P.hp+1);burst(j.x,j.y,css('--jelly'),4);}
+   if(j.type==='heart'){P.hp=Math.min(100,P.hp+25);burst(j.x,j.y,'#ff7a7a',6);}
+   if(j.type==='star'){P.boost=4;burst(j.x,j.y,'#ffd23c',12);}
+   return false;
+  }return true;
+ });
+
+ score+=speed*dt*0.05;
+ document.getElementById('score').textContent=Math.floor(score);
+ document.getElementById('hp').style.width=Math.max(0,P.hp)+'%';
+ if(P.hp<=0&&!P.dead){P.dead=true;running=false;showEnd();}
+}
+
+function draw(){
+ // 하늘
+ const g=ctx.createLinearGradient(0,0,0,H);
+ g.addColorStop(0,css('--sky1'));g.addColorStop(1,css('--sky2'));
+ ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+ // 구름
+ ctx.fillStyle='rgba(255,255,255,.7)';
+ for(const c of clouds){ctx.beginPath();ctx.ellipse(c.x,c.y,40*c.s,16*c.s,0,0,7);
+  ctx.ellipse(c.x+25*c.s,c.y-8,28*c.s,13*c.s,0,0,7);ctx.fill();}
+ // 땅
+ ctx.fillStyle=css('--ground');ctx.fillRect(0,GROUND,W,H-GROUND);
+ ctx.fillStyle=css('--ground2');ctx.fillRect(0,GROUND,W,10);
+ // 구덩이
+ for(const o of obs)if(o.type==='pit'){
+  ctx.fillStyle='#2b1608';ctx.fillRect(o.x,GROUND,o.w,H-GROUND);}
+ // 땅 줄무늬
+ ctx.strokeStyle='rgba(0,0,0,.12)';ctx.lineWidth=3;
+ const off=(P.run*10)%60;
+ for(let x=-off;x<W;x+=60){ctx.beginPath();ctx.moveTo(x,GROUND+25);ctx.lineTo(x+30,GROUND+25);ctx.stroke();}
+
+ // 장애물
+ for(const o of obs){
+  if(o.type==='box'){ctx.fillStyle='#a04a2a';ctx.fillRect(o.x,o.y-o.h,o.w,o.h);
+   ctx.fillStyle='#7c3820';ctx.fillRect(o.x,o.y-o.h,o.w,8);
+   ctx.strokeStyle='rgba(0,0,0,.25)';ctx.strokeRect(o.x,o.y-o.h,o.w,o.h);}
+  if(o.type==='bird'){ // 위협 새/포크
+   ctx.fillStyle='#5a4a8a';
+   ctx.beginPath();ctx.ellipse(o.x+o.w/2,o.y-o.h/2,o.w/2,o.h/2,0,0,7);ctx.fill();
+   const flap=Math.sin(P.run*0.5)*8;
+   ctx.beginPath();ctx.moveTo(o.x+10,o.y-o.h/2);ctx.lineTo(o.x-8,o.y-o.h/2-12+flap);ctx.lineTo(o.x+18,o.y-o.h/2-4);ctx.fill();
+   ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(o.x+o.w-14,o.y-o.h/2-4,5,0,7);ctx.fill();
+   ctx.fillStyle='#000';ctx.beginPath();ctx.arc(o.x+o.w-12,o.y-o.h/2-4,2.5,0,7);ctx.fill();}
+ }
+ // 젤리
+ for(const j of jellies){
+  if(j.type==='pink'){ctx.fillStyle=css('--jelly');
+   ctx.beginPath();ctx.arc(j.x,j.y,j.r,0,7);ctx.fill();
+   ctx.fillStyle='rgba(255,255,255,.6)';ctx.beginPath();ctx.arc(j.x-3,j.y-3,3.5,0,7);ctx.fill();}
+  if(j.type==='heart'){ctx.fillStyle='#ff6a6a';heart(j.x,j.y,j.r);}
+  if(j.type==='star'){ctx.fillStyle='#ffd23c';star(j.x,j.y,j.r+3);}
+ }
+ // 파티클
+ for(const p of parts){ctx.globalAlpha=p.life*2;ctx.fillStyle=p.c;ctx.fillRect(p.x-3,p.y-3,6,6);ctx.globalAlpha=1;}
+ // 쿠키
+ drawCookie();
+}
+function heart(x,y,r){ctx.beginPath();
+ ctx.moveTo(x,y+r*0.7);ctx.bezierCurveTo(x-r*1.4,y-r*0.4,x-r*0.5,y-r*1.3,x,y-r*0.4);
+ ctx.bezierCurveTo(x+r*0.5,y-r*1.3,x+r*1.4,y-r*0.4,x,y+r*0.7);ctx.fill();}
+function star(x,y,r){ctx.beginPath();
+ for(let i=0;i<10;i++){const a=-Math.PI/2+i*Math.PI/5,rr=i%2?r/2.2:r;
+  ctx[i?'lineTo':'moveTo'](x+Math.cos(a)*rr,y+Math.sin(a)*rr);}
+ ctx.closePath();ctx.fill();}
+function drawCookie(){
+ const h=P.sliding?32:P.h;
+ const x=P.x,y=P.y;
+ if(P.inv>0&&Math.floor(P.inv*12)%2)return; // 피격 깜빡임
+ ctx.save();ctx.translate(x,y);
+ if(P.boost>0){ // 무적 잔상
+  ctx.shadowColor='#ffd23c';ctx.shadowBlur=25;
+ }
+ // 다리 (달리기)
+ const leg=Math.sin(P.run)*12;
+ ctx.strokeStyle='#8a5a28';ctx.lineWidth=7;ctx.lineCap='round';
+ if(P.y>=GROUND-1&&!P.sliding){
+  ctx.beginPath();ctx.moveTo(-8,-14);ctx.lineTo(-8+leg,0);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(8,-14);ctx.lineTo(8-leg,0);ctx.stroke();
+ }
+ // 몸
+ ctx.fillStyle=css('--cookie');
+ if(P.sliding){ctx.beginPath();ctx.ellipse(0,-16,30,16,0,0,7);ctx.fill();}
+ else{ctx.beginPath();ctx.ellipse(0,-h/2-6,P.w/2,h/2-4,0,0,7);ctx.fill();}
+ ctx.strokeStyle='rgba(0,0,0,.25)';ctx.lineWidth=3;ctx.stroke();
+ // 초코칩
+ ctx.fillStyle='#5c3a16';
+ const cy=P.sliding?-16:-h/2-6;
+ ctx.beginPath();ctx.arc(-10,cy+8,4,0,7);ctx.arc(12,cy+2,4,0,7);ctx.arc(-2,cy+16,3,0,7);ctx.fill();
+ // 얼굴
+ const fy=P.sliding?-20:-h+14;
+ ctx.fillStyle='#fff';
+ ctx.beginPath();ctx.arc(-7,fy,5,0,7);ctx.arc(7,fy,5,0,7);ctx.fill();
+ ctx.fillStyle='#000';
+ ctx.beginPath();ctx.arc(-5,fy,2.5,0,7);ctx.arc(9,fy,2.5,0,7);ctx.fill();
+ // 입
+ ctx.strokeStyle='#5c3a16';ctx.lineWidth=2.5;
+ ctx.beginPath();ctx.arc(1,fy+9,5,0.2,Math.PI-0.2);ctx.stroke();
+ ctx.restore();
+}
+
+let last=0;
+function loop(t){
+ if(!running)return;
+ const dt=Math.min((t-last)/1000,0.05);last=t;
+ update(dt);draw();
+ requestAnimationFrame(loop);
+}
+function showEnd(){
+ const m=document.getElementById('msg');
+ m.querySelector('h1').textContent='😵 으악!';
+ m.querySelector('p').innerHTML='최종 점수: <b style="font-size:28px;color:#ffd23c">'+Math.floor(score)+'</b><br>달린 거리: '+Math.floor(dist/100)+'m';
+ m.querySelector('button').textContent='다시 달리기';
+ m.classList.remove('hidden');
+}
+document.getElementById('startBtn').onclick=()=>{
+ document.getElementById('msg').classList.add('hidden');
+ reset();running=true;last=performance.now();requestAnimationFrame(loop);
+};
+})();
+</script>
+</body>
+</html>
