@@ -30,7 +30,7 @@ function reset(){
  P.x=W*0.22;P.y=GROUND;P.vy=0;P.jumps=0;P.sliding=false;P.hp=100;P.inv=0;
  P.mag=0;P.bag=0;P.bonus=0;P.dead=false;P.run=0;P.tilt=0;
  baseSpeed=360;speed=baseSpeed;dist=0;score=0;picked=0;
- obs=[];items=[];parts=[];spawnT=1.1;itemT=0.6;heavenY=0;shake=0;
+ obs=[];items=[];parts=[];spawnT=0.5;itemT=0.6;heavenY=0;shake=0;
  clouds=[];for(let i=0;i<6;i++)clouds.push({x:Math.random()*W,y:40+Math.random()*H*0.35,s:0.5+Math.random()});
  trees=[];for(let i=0;i<4;i++)trees.push({x:Math.random()*W,s:0.8+Math.random()*0.6});
  fireflies=[];for(let i=0;i<30;i++)fireflies.push({x:Math.random()*W,y:Math.random()*H,ph:Math.random()*6,sp:0.3+Math.random()});
@@ -290,6 +290,11 @@ function drawCookie(){
  if(P.bonus<=0){ctx.fillStyle='rgba(0,0,0,.3)';
   const sw=drawW*0.4*(1-Math.min((GROUND-P.y)/300,0.6));ctx.beginPath();ctx.ellipse(P.x,GROUND+4,Math.max(8,sw),9,0,0,7);ctx.fill();}
  ctx.save();ctx.translate(cx,cy);
+ // 캐릭터 뒤 부드러운 빛 후광 (흰 배경을 오라처럼 녹임)
+ {const halo=selected===0?'rgba(255,240,180,':'rgba(150,210,255,';
+  const rg=ctx.createRadialGradient(0,0,drawW*0.15,0,0,drawW*0.72);
+  rg.addColorStop(0,halo+'0.55)');rg.addColorStop(0.5,halo+'0.28)');rg.addColorStop(1,halo+'0)');
+  ctx.fillStyle=rg;ctx.beginPath();ctx.arc(0,0,drawW*0.72,0,7);ctx.fill();}
  // 비닐봉투 흡입 오라
  if(P.bag>0){ctx.save();ctx.globalAlpha=0.35+Math.sin(P.run*3)*0.15;ctx.strokeStyle='#9be0ff';ctx.lineWidth=4;
   for(let i=1;i<=3;i++){ctx.beginPath();ctx.arc(0,0,drawW*0.55+i*16,0,7);ctx.stroke();}ctx.restore();}
@@ -297,20 +302,21 @@ function drawCookie(){
   for(let i=1;i<=3;i++){ctx.beginPath();ctx.arc(0,0,drawW*0.5+i*14,0,7);ctx.stroke();}ctx.restore();}
  if(P.bonus>0){ctx.save();ctx.globalAlpha=0.6;ctx.shadowColor='#ffe9a0';ctx.shadowBlur=40;
   ctx.fillStyle='rgba(255,240,180,.2)';ctx.beginPath();ctx.arc(0,0,drawW*0.6,0,7);ctx.fill();ctx.restore();}
- ctx.rotate(P.tilt);
+ // 슬라이드: 몸을 앞으로 기울여 눕는 자세 (납작하게 안 누름)
+ ctx.rotate(P.sliding ? -0.95 : P.tilt);
  ctx.strokeStyle=selected===0?'#e8d49a':'#2a4a8a';ctx.lineWidth=8*scale;ctx.lineCap='round';
  const legTop=drawH*0.30, footY=drawH*0.5+2;
- if(P.sliding){ctx.beginPath();ctx.moveTo(-drawW*0.1,legTop);ctx.lineTo(-drawW*0.5,footY*0.7);ctx.stroke();
-  ctx.beginPath();ctx.moveTo(-drawW*0.2,legTop);ctx.lineTo(-drawW*0.55,footY*0.8);ctx.stroke();}
+ if(P.sliding){ctx.beginPath();ctx.moveTo(-drawW*0.1,legTop);ctx.lineTo(drawW*0.35,footY*0.55);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(drawW*0.0,legTop);ctx.lineTo(drawW*0.42,footY*0.7);ctx.stroke();}
  else if(!onGround){ctx.beginPath();ctx.moveTo(-drawW*0.12,legTop);ctx.lineTo(-drawW*0.05,footY*0.78);ctx.stroke();
   ctx.beginPath();ctx.moveTo(drawW*0.12,legTop);ctx.lineTo(drawW*0.18,footY*0.7);ctx.stroke();}
  else{const sw=Math.sin(P.run)*drawW*0.28;
   ctx.beginPath();ctx.moveTo(-drawW*0.05,legTop);ctx.lineTo(-drawW*0.05+sw,footY);ctx.stroke();
   ctx.beginPath();ctx.moveTo(drawW*0.08,legTop);ctx.lineTo(drawW*0.08-sw,footY);ctx.stroke();}
- const sq=P.sliding?0.62:1;
+ // 이미지: 슬라이드 시 회전으로 눕는 효과(찌부 X)
  if(img.complete&&img.naturalWidth){const iw=drawW, ih=drawW*(img.naturalHeight/img.naturalWidth);
-  ctx.drawImage(img,-iw/2,-ih/2*sq-(P.sliding?0:ih*0.05),iw,ih*sq);}
- else{ctx.fillStyle=selected===0?'#ffe6b0':'#7ad0ff';ctx.beginPath();ctx.ellipse(0,0,drawW*0.4,drawH*0.45*sq,0,0,7);ctx.fill();}
+  ctx.drawImage(img,-iw/2,-ih/2-ih*0.05,iw,ih);}
+ else{ctx.fillStyle=selected===0?'#ffe6b0':'#7ad0ff';ctx.beginPath();ctx.ellipse(0,0,drawW*0.4,drawH*0.45,0,0,7);ctx.fill();}
  ctx.restore();
 }
 function mix(a,b,t){const pa=hx(a),pb=hx(b);
