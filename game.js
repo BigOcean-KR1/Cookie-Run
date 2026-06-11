@@ -22,13 +22,14 @@ let speed,baseSpeed,dist,score,picked,obs,items,parts,clouds,trees,fireflies,
     spawnT,itemT,running=false,heavenY=0,shake=0;
 const GRAV=2600,JUMP=-900;
 
-// 쓰레기 종류
+// 쓰레기 종류 / 음료수 종류
 const TRASH=['butt','can','bottle','paper'];
+const DRINK=['juice','soda','water'];
 
 function reset(){
  P.x=W*0.22;P.y=GROUND;P.vy=0;P.jumps=0;P.sliding=false;P.hp=100;P.inv=0;
  P.mag=0;P.bag=0;P.bonus=0;P.dead=false;P.run=0;P.tilt=0;
- baseSpeed=380;speed=baseSpeed;dist=0;score=0;picked=0;
+ baseSpeed=360;speed=baseSpeed;dist=0;score=0;picked=0;
  obs=[];items=[];parts=[];spawnT=1.1;itemT=0.6;heavenY=0;shake=0;
  clouds=[];for(let i=0;i<6;i++)clouds.push({x:Math.random()*W,y:40+Math.random()*H*0.35,s:0.5+Math.random()});
  trees=[];for(let i=0;i<4;i++)trees.push({x:Math.random()*W,s:0.8+Math.random()*0.6});
@@ -55,53 +56,66 @@ function banner(txt){const b=document.getElementById('banner');b.textContent=txt
  b.classList.remove('show');void b.offsetWidth;b.classList.add('show');b.style.opacity=1;
  clearTimeout(b._t);b._t=setTimeout(()=>b.style.opacity=0,1100);}
 
-function spawnObs(){const r=Math.random();
- // 장애물 크게: 점프로 넘는 큰 상자 / 슬라이드로 피하는 큰 박쥐 / 넓은 구덩이
- if(r<0.40) obs.push({type:'box',x:W+60,y:GROUND,w:80,h:105});
- else if(r<0.70) obs.push({type:'bat',x:W+60,y:GROUND-120,w:95,h:62,ph:0});
- else obs.push({type:'pit',x:W+60,y:GROUND,w:200+Math.random()*90});}
 function mkItem(t,x,y){return {kind:'power',type:t,x,y,r:16};}
-function spawnRow(){
+function addTrash(x,y){items.push({kind:'trash',type:TRASH[Math.floor(Math.random()*TRASH.length)],x,y,r:13,rot:Math.random()*6});}
+function addDrink(x,y){items.push({kind:'drink',type:DRINK[Math.floor(Math.random()*DRINK.length)],x,y,r:15,rot:0});}
+
+// 점프 포물선을 따라 쓰레기 깔기 (gap=장애물 폭). 점프 물리에 맞춘 곡선.
+function trashArc(x0,gap,peak){
+ const n=Math.max(5,Math.round(gap/46));
+ for(let i=0;i<=n;i++){const t=i/n;
+  // 0~1 구간 포물선: 4t(1-t) → 최고점 peak
+  const h=4*t*(1-t)*peak;
+  addTrash(x0+t*gap, GROUND-46-h);}
+}
+
+function spawnPattern(){
  const r=Math.random();
- if(r<0.06) items.push(mkItem('fire',W+40,GROUND-42-(Math.random()<0.4?95:0)));
- else if(r<0.13) items.push(mkItem('bag',W+40,GROUND-42-(Math.random()<0.4?95:0)));
- else if(r<0.19) items.push(mkItem('magnet',W+40,GROUND-42-(Math.random()<0.4?95:0)));
- else if(r<0.26) items.push(mkItem('heart',W+40,GROUND-42-(Math.random()<0.4?95:0)));
- else{
-  // 쓰레기 줄: 낮은 줄 / 높은 공중 줄(2단 점프) 섞기
-  const tier=Math.random();
-  let baseY;
-  if(tier<0.45) baseY=GROUND-46;                  // 바닥 근처
-  else if(tier<0.8) baseY=GROUND-150;             // 1단 점프 높이
-  else baseY=GROUND-280;                          // 공중(2단 점프 필요)
-  const n=5+Math.floor(Math.random()*4);
-  const arcH=baseY<GROUND-200?40:60;
-  for(let i=0;i<n;i++){const arc=Math.sin(i/(n-1)*Math.PI)*arcH;
-   items.push({kind:'trash',type:TRASH[Math.floor(Math.random()*TRASH.length)],
-    x:W+40+i*46,y:baseY-arc,r:13,rot:Math.random()*6});}}
+ // 가끔 파워업 단독 등장
+ if(r<0.05){items.push(mkItem('fire',W+60,GROUND-120));return;}
+ if(r<0.10){items.push(mkItem('bag',W+60,GROUND-120));return;}
+ if(r<0.14){items.push(mkItem('magnet',W+60,GROUND-120));return;}
+ if(r<0.18){items.push(mkItem('heart',W+60,GROUND-120));return;}
+
+ const o=Math.random();
+ if(o<0.34){ // 큰 상자: 넘는 점프 궤적 따라 쓰레기
+  const bx=W+60;obs.push({type:'box',x:bx,y:GROUND,w:80,h:105});
+  trashArc(bx-90, 260, 200);
+ } else if(o<0.62){ // 넓은 구덩이: 2단 점프 궤적 따라 쓰레기
+  const pw=210+Math.random()*100, bx=W+60;
+  obs.push({type:'pit',x:bx,y:GROUND,w:pw});
+  trashArc(bx-70, pw+140, 300);   // 높이 큰 포물선(2단 점프 유도)
+ } else if(o<0.82){ // 박쥐(슬라이드): 낮게 깔린 쓰레기 줄
+  const bx=W+60;obs.push({type:'bat',x:bx,y:GROUND-120,w:95,h:62,ph:0});
+  for(let i=0;i<7;i++)addTrash(bx-100+i*40, GROUND-46);
+ } else { // 평지: 물결 쓰레기 줄
+  const tier=Math.random();const baseY=tier<0.5?GROUND-46:(tier<0.85?GROUND-150:GROUND-280);
+  const n=6+Math.floor(Math.random()*3);const arcH=baseY<GROUND-200?40:60;
+  for(let i=0;i<n;i++){const arc=Math.sin(i/(n-1)*Math.PI)*arcH;addTrash(W+40+i*46, baseY-arc);}
+ }
 }
 
 function update(dt){
  dist+=speed*dt;P.run+=dt*(speed/baseSpeed)*9;
  if(P.bonus>0){
-  P.bonus-=dt;heavenY=Math.min(heavenY+dt*1.5,1);itemT-=dt;
-  if(itemT<=0){itemT=0.18;const yy=H*0.15+Math.random()*H*0.5;
-   items.push({kind:'trash',type:TRASH[Math.floor(Math.random()*TRASH.length)],x:W+30,y:yy,r:14,rot:Math.random()*6});}
+  P.bonus-=dt;heavenY=Math.min(heavenY+dt*1.6,1);itemT-=dt;
+  if(itemT<=0){itemT=0.16;const yy=H*0.14+Math.random()*H*0.5;addDrink(W+30,yy);}
   P.targetY=H*0.42+Math.sin(P.run*0.6)*60;P.y+=(P.targetY-P.y)*0.08;P.hp=Math.min(100,P.hp+dt*4);
   if(P.bonus<=0){heavenY=0;itemT=0.6;P.y=GROUND;P.vy=0;}
  } else {
-  heavenY=Math.max(heavenY-dt*1.5,0);speed=Math.min(baseSpeed+dist*0.012,920);P.hp-=dt*2.2;
+  heavenY=Math.max(heavenY-dt*1.6,0);
+  // 진행할수록 점진 가속 (기본 360 → 최대 1050)
+  speed=Math.min(baseSpeed+dist*0.018,1050);
+  P.hp-=dt*2.2;
   P.vy+=GRAV*dt;P.y+=P.vy*dt;
   let onPit=obs.some(o=>o.type==='pit'&&P.x>o.x&&P.x<o.x+o.w);
   if(P.y>=GROUND&&!onPit){P.y=GROUND;P.vy=0;P.jumps=0;}
-  // 구덩이에 빠짐: 즉사 대신 체력 크게 깎이고 다시 끌어올림
   if(P.y>GROUND+90){
    if(P.inv<=0){P.hp-=30;P.inv=1.5;shake=0.4;banner('⚠️ 구덩이!');burst(P.x,GROUND,'#ff5a5a',12);}
-   P.y=GROUND;P.vy=JUMP*0.6;P.jumps=1; // 살짝 튕겨 올라옴
+   P.y=GROUND;P.vy=JUMP*0.6;P.jumps=1;
   }
-  spawnT-=dt;itemT-=dt;
-  if(spawnT<=0){spawnObs();spawnT=(0.9+Math.random()*0.9)*(baseSpeed/speed)+0.4;}
-  if(itemT<=0){spawnRow();itemT=1.2+Math.random();}
+  spawnT-=dt;
+  if(spawnT<=0){spawnPattern();spawnT=(1.3+Math.random()*0.7)*(baseSpeed/speed)+0.3;}
  }
  if(P.mag>0)P.mag-=dt;if(P.bag>0)P.bag-=dt;if(P.inv>0)P.inv-=dt;if(shake>0)shake-=dt;
  const wantTilt=P.sliding?-0.5:(P.y<GROUND-5&&P.bonus<=0?-0.12:0.06);P.tilt+=(wantTilt-P.tilt)*0.2;
@@ -117,7 +131,7 @@ function update(dt){
  // 자석: 끌어당김 / 비닐봉투: 강한 일괄 흡입
  const pull = P.bag>0 ? 0.30 : (P.mag>0 ? 0.14 : 0);
  const radius = P.bag>0 ? 9999 : (P.mag>0 ? 260 : 0);
- if(pull>0){for(const it of items){if(it.kind==='trash'){
+ if(pull>0){for(const it of items){if(it.kind==='trash'||it.kind==='drink'){
   const d=Math.hypot(it.x-P.x,it.y-cyMid);if(d<radius){it.x+=(P.x-it.x)*pull;it.y+=(cyMid-it.y)*pull;}}}}
  // 장애물 충돌
  if(P.bonus<=0){const px=P.x-pw/2,py=P.y-ph;
@@ -136,6 +150,7 @@ function update(dt){
 }
 function pick(it){
  if(it.kind==='trash'){score+=10;picked++;P.hp=Math.min(100,P.hp+0.6);burst(it.x,it.y,'#9be29b',4);}
+ else if(it.kind==='drink'){score+=20;P.hp=Math.min(100,P.hp+1.5);burst(it.x,it.y,'#7ad0ff',5);}
  else if(it.type==='heart'){P.hp=Math.min(100,P.hp+26);burst(it.x,it.y,'#ff7a7a',8);banner('💗 회복!');}
  else if(it.type==='bag'){P.bag=4;burst(it.x,it.y,'#7ad0ff',16);banner('🛍️ 일괄 흡입!');shake=0.2;}
  else if(it.type==='magnet'){P.mag=7;burst(it.x,it.y,'#ff5a5a',14);banner('🧲 자석!');}
@@ -153,22 +168,40 @@ function draw(){
 function drawBackground(){
  const h=heavenY;
  const g=ctx.createLinearGradient(0,0,0,H);
- g.addColorStop(0,mix('#0c1530','#bfe8ff',h));g.addColorStop(0.5,mix('#142447','#ffe9c2',h));g.addColorStop(1,mix('#1d2a4d','#ffd0e8',h));
+ // 천국: 더 밝고 따뜻하게 (위 하늘파랑 → 아래 솜사탕핑크/크림)
+ g.addColorStop(0,mix('#0c1530','#d4f0ff',h));
+ g.addColorStop(0.5,mix('#142447','#fff4dc',h));
+ g.addColorStop(1,mix('#1d2a4d','#ffe0ef',h));
  ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
- if(h>0.05){ctx.save();ctx.globalAlpha=h*0.5;
-  for(let i=0;i<6;i++){const x=W*(i/6)+(P.run*8)%(W/6);const grd=ctx.createLinearGradient(x,0,x+60,H);
-   grd.addColorStop(0,'rgba(255,250,210,.5)');grd.addColorStop(1,'rgba(255,250,210,0)');ctx.fillStyle=grd;ctx.fillRect(x,0,60,H);}ctx.restore();}
- for(const c of clouds){ctx.fillStyle='rgba(255,255,255,'+(0.35+h*0.4)+')';
-  ctx.beginPath();ctx.ellipse(c.x,c.y,46*c.s,18*c.s,0,0,7);ctx.ellipse(c.x+28*c.s,c.y-9,30*c.s,14*c.s,0,0,7);ctx.fill();}
+ // 천국 빛줄기 (더 부드럽고 환하게)
+ if(h>0.05){ctx.save();ctx.globalAlpha=h*0.55;
+  for(let i=0;i<7;i++){const x=W*(i/7)+(P.run*8)%(W/7);const grd=ctx.createLinearGradient(x,0,x+80,H);
+   grd.addColorStop(0,'rgba(255,255,240,.6)');grd.addColorStop(1,'rgba(255,255,240,0)');ctx.fillStyle=grd;ctx.fillRect(x,0,80,H);}ctx.restore();}
+ // 반짝임(천국)
+ if(h>0.3){ctx.save();ctx.globalAlpha=(h-0.3)*0.9;
+  for(const f of fireflies){const a=(Math.sin(f.ph)*0.5+0.5);ctx.fillStyle='rgba(255,255,255,'+a+')';
+   ctx.beginPath();ctx.arc(f.x,(f.y*0.6),1.8+a*1.5,0,7);ctx.fill();}ctx.restore();}
+ // 구름 (천국이면 크고 폭신하게)
+ for(const c of clouds){const cs=c.s*(1+h*0.6);
+  ctx.fillStyle='rgba(255,255,255,'+(0.35+h*0.55)+')';
+  ctx.beginPath();ctx.ellipse(c.x,c.y,46*cs,18*cs,0,0,7);
+  ctx.ellipse(c.x+28*cs,c.y-9,30*cs,14*cs,0,0,7);
+  ctx.ellipse(c.x-26*cs,c.y-4,26*cs,13*cs,0,0,7);ctx.fill();}
  if(h<0.9){ctx.globalAlpha=1-h;
   for(const f of fireflies){const a=(Math.sin(f.ph)*0.5+0.5);ctx.fillStyle='rgba(150,255,210,'+a*0.8+')';ctx.beginPath();ctx.arc(f.x,f.y,2.2,0,7);ctx.fill();}
   for(const t of trees){ctx.fillStyle='rgba(8,16,30,.85)';const tw=70*t.s;ctx.fillRect(t.x,0,tw,GROUND);
    ctx.fillStyle='rgba(120,200,220,.25)';ctx.fillRect(t.x,GROUND-30,tw,30);}ctx.globalAlpha=1;}
+ // 바닥 (천국이면 폭신한 구름 바닥)
  if(h<0.95){ctx.globalAlpha=1-h*0.6;
-  ctx.fillStyle=mix('#243a2e','#cde8d0',h);ctx.fillRect(0,GROUND,W,H-GROUND);
-  ctx.fillStyle=mix('#3a6b4a','#a6e0b0',h);ctx.fillRect(0,GROUND,W,12);
-  ctx.strokeStyle='rgba(0,0,0,.18)';ctx.lineWidth=3;const off=(P.run*30)%70;
+  ctx.fillStyle=mix('#243a2e','#ffffff',h);ctx.fillRect(0,GROUND,W,H-GROUND);
+  ctx.fillStyle=mix('#3a6b4a','#ffe6f4',h);ctx.fillRect(0,GROUND,W,12);
+  ctx.strokeStyle='rgba(0,0,0,'+(0.18*(1-h))+')';ctx.lineWidth=3;const off=(P.run*30)%70;
   for(let x=-off;x<W;x+=70){ctx.beginPath();ctx.moveTo(x,GROUND+28);ctx.lineTo(x+34,GROUND+28);ctx.stroke();}ctx.globalAlpha=1;}
+ // 천국 구름 바닥 덩어리
+ if(h>0.4){ctx.save();ctx.globalAlpha=(h-0.4)*1.4;ctx.fillStyle='rgba(255,255,255,.9)';
+  const off=(P.run*20)%180;
+  for(let x=-off;x<W+180;x+=180){ctx.beginPath();
+   ctx.arc(x,H-20,70,Math.PI,0);ctx.arc(x+70,H-10,55,Math.PI,0);ctx.fill();}ctx.restore();}
 }
 function drawObs(o){
  if(o.type==='box'){ctx.fillStyle='#3a2a55';ctx.fillRect(o.x,o.y-o.h,o.w,o.h);
@@ -187,12 +220,30 @@ function drawObs(o){
 function drawItem(it){
  const x=it.x,y=it.y;
  if(it.kind==='trash'){drawTrash(it);return;}
+ if(it.kind==='drink'){drawDrink(it);return;}
  if(it.type==='heart'){ctx.fillStyle='#ff6a8a';glow(x,y,'#ff7aa0');heart(x,y,it.r);}
  else if(it.type==='bag'){drawBag(x,y,it.r);}
  else if(ITEM_IMG[it.type]&&ITEM_IMG[it.type].complete&&ITEM_IMG[it.type].naturalWidth){
   const im=ITEM_IMG[it.type];const s=it.r*2.6;
   glow(x,y,it.type==='fire'?'#ffb24a':'#ff5a5a');
   ctx.drawImage(im,x-s/2,y-s/2,s,s*(im.naturalHeight/im.naturalWidth));}
+}
+function drawDrink(it){
+ const x=it.x,y=it.y,r=it.r;
+ const col=it.type==='juice'?'#ff8a3c':it.type==='soda'?'#7ad0ff':'#bfe8ff';
+ glow(x,y,col);
+ ctx.save();ctx.translate(x,y);
+ // 컵
+ ctx.fillStyle='rgba(255,255,255,.85)';
+ ctx.beginPath();ctx.moveTo(-r*0.7,-r);ctx.lineTo(r*0.7,-r);ctx.lineTo(r*0.5,r);ctx.lineTo(-r*0.5,r);ctx.closePath();ctx.fill();
+ // 음료
+ ctx.fillStyle=col;
+ ctx.beginPath();ctx.moveTo(-r*0.6,-r*0.5);ctx.lineTo(r*0.6,-r*0.5);ctx.lineTo(r*0.5,r*0.9);ctx.lineTo(-r*0.5,r*0.9);ctx.closePath();ctx.fill();
+ // 빨대
+ ctx.strokeStyle='#ff5a8a';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(r*0.2,-r*1.4);ctx.lineTo(-r*0.1,r*0.3);ctx.stroke();
+ // 광택
+ ctx.fillStyle='rgba(255,255,255,.5)';ctx.fillRect(-r*0.4,-r*0.4,r*0.18,r);
+ ctx.restore();
 }
 function drawTrash(it){
  const x=it.x,y=it.y,r=it.r;ctx.save();ctx.translate(x,y);ctx.rotate(it.rot);
