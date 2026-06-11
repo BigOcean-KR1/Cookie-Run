@@ -27,7 +27,7 @@ const TRASH=['butt','can','bottle','paper'];
 const DRINK=['juice','soda','water'];
 
 function reset(){
- P.x=W*0.22;P.y=GROUND;P.vy=0;P.jumps=0;P.sliding=false;P.hp=100;P.inv=0;
+ P.x=W*0.28;P.y=GROUND;P.vy=0;P.jumps=0;P.sliding=false;P.hp=100;P.inv=0;
  P.mag=0;P.bag=0;P.bonus=0;P.dead=false;P.run=0;P.tilt=0;
  baseSpeed=360;speed=baseSpeed;dist=0;score=0;picked=0;
  obs=[];items=[];parts=[];spawnT=0.5;itemT=0.6;heavenY=0;shake=0;
@@ -71,11 +71,11 @@ function trashArc(x0,gap,peak){
 
 function spawnPattern(){
  const r=Math.random();
- // 가끔 파워업 단독 등장
- if(r<0.05){items.push(mkItem('fire',W+60,GROUND-120));return;}
- if(r<0.10){items.push(mkItem('bag',W+60,GROUND-120));return;}
- if(r<0.14){items.push(mkItem('magnet',W+60,GROUND-120));return;}
- if(r<0.18){items.push(mkItem('heart',W+60,GROUND-120));return;}
+ // 가끔 파워업 단독 등장 (보너스/봉투/자석/하트)
+ if(r<0.10){items.push(mkItem('fire',W+60,GROUND-120));return;}
+ if(r<0.16){items.push(mkItem('bag',W+60,GROUND-120));return;}
+ if(r<0.21){items.push(mkItem('magnet',W+60,GROUND-120));return;}
+ if(r<0.26){items.push(mkItem('heart',W+60,GROUND-120));return;}
 
  const o=Math.random();
  if(o<0.34){ // 큰 상자: 넘는 점프 궤적 따라 쓰레기
@@ -122,6 +122,8 @@ function update(dt){
  const sc=P.bonus>0?speed*1.3:speed;
  obs.forEach(o=>o.x-=sc*dt);obs=obs.filter(o=>o.x+(o.w||0)>-60);
  obs.forEach(o=>{if(o.type==='bat'){o.ph+=dt*4;o.y=GROUND-120+Math.sin(o.ph)*24;}});
+ // 쓰레기/아이템도 함께 흘러오게 (이게 빠져 있었음)
+ items.forEach(it=>it.x-=sc*dt);items=items.filter(it=>it.x>-60);
  clouds.forEach(c=>{c.x-=sc*dt*0.12*c.s;if(c.x<-120)c.x=W+120;});
  trees.forEach(t=>{t.x-=sc*dt*0.4;if(t.x<-160)t.x=W+Math.random()*200;});
  fireflies.forEach(f=>{f.x-=sc*dt*0.3;f.ph+=dt*f.sp*3;if(f.x<-10){f.x=W+10;f.y=Math.random()*H;}});
@@ -168,12 +170,12 @@ function draw(){
 function drawBackground(){
  const h=heavenY;
  const g=ctx.createLinearGradient(0,0,0,H);
- // 천국: 더 밝고 따뜻하게 (위 하늘파랑 → 아래 솜사탕핑크/크림)
- g.addColorStop(0,mix('#0c1530','#d4f0ff',h));
- g.addColorStop(0.5,mix('#142447','#fff4dc',h));
- g.addColorStop(1,mix('#1d2a4d','#ffe0ef',h));
+ // 평상시: 밝고 산뜻한 하늘(연파랑→복숭아) / 천국: 솜사탕빛
+ g.addColorStop(0,mix('#7ec8f0','#d4f0ff',h));
+ g.addColorStop(0.5,mix('#bfe0f0','#fff4dc',h));
+ g.addColorStop(1,mix('#ffe2c4','#ffe0ef',h));
  ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
- // 천국 빛줄기 (더 부드럽고 환하게)
+ // 천국 빛줄기
  if(h>0.05){ctx.save();ctx.globalAlpha=h*0.55;
   for(let i=0;i<7;i++){const x=W*(i/7)+(P.run*8)%(W/7);const grd=ctx.createLinearGradient(x,0,x+80,H);
    grd.addColorStop(0,'rgba(255,255,240,.6)');grd.addColorStop(1,'rgba(255,255,240,0)');ctx.fillStyle=grd;ctx.fillRect(x,0,80,H);}ctx.restore();}
@@ -181,21 +183,21 @@ function drawBackground(){
  if(h>0.3){ctx.save();ctx.globalAlpha=(h-0.3)*0.9;
   for(const f of fireflies){const a=(Math.sin(f.ph)*0.5+0.5);ctx.fillStyle='rgba(255,255,255,'+a+')';
    ctx.beginPath();ctx.arc(f.x,(f.y*0.6),1.8+a*1.5,0,7);ctx.fill();}ctx.restore();}
- // 구름 (천국이면 크고 폭신하게)
+ // 구름 (항상 밝고 폭신)
  for(const c of clouds){const cs=c.s*(1+h*0.6);
-  ctx.fillStyle='rgba(255,255,255,'+(0.35+h*0.55)+')';
+  ctx.fillStyle='rgba(255,255,255,'+(0.7+h*0.25)+')';
   ctx.beginPath();ctx.ellipse(c.x,c.y,46*cs,18*cs,0,0,7);
   ctx.ellipse(c.x+28*cs,c.y-9,30*cs,14*cs,0,0,7);
   ctx.ellipse(c.x-26*cs,c.y-4,26*cs,13*cs,0,0,7);ctx.fill();}
- if(h<0.9){ctx.globalAlpha=1-h;
-  for(const f of fireflies){const a=(Math.sin(f.ph)*0.5+0.5);ctx.fillStyle='rgba(150,255,210,'+a*0.8+')';ctx.beginPath();ctx.arc(f.x,f.y,2.2,0,7);ctx.fill();}
-  for(const t of trees){ctx.fillStyle='rgba(8,16,30,.85)';const tw=70*t.s;ctx.fillRect(t.x,0,tw,GROUND);
-   ctx.fillStyle='rgba(120,200,220,.25)';ctx.fillRect(t.x,GROUND-30,tw,30);}ctx.globalAlpha=1;}
- // 바닥 (천국이면 폭신한 구름 바닥)
+ // 멀리 보이는 부드러운 언덕(나무 실루엣 대신)
+ if(h<0.9){ctx.globalAlpha=(1-h)*0.5;
+  for(const t of trees){ctx.fillStyle='rgba(120,180,140,.5)';
+   ctx.beginPath();ctx.ellipse(t.x,GROUND,120*t.s,70*t.s,0,Math.PI,0);ctx.fill();}ctx.globalAlpha=1;}
+ // 바닥
  if(h<0.95){ctx.globalAlpha=1-h*0.6;
-  ctx.fillStyle=mix('#243a2e','#ffffff',h);ctx.fillRect(0,GROUND,W,H-GROUND);
-  ctx.fillStyle=mix('#3a6b4a','#ffe6f4',h);ctx.fillRect(0,GROUND,W,12);
-  ctx.strokeStyle='rgba(0,0,0,'+(0.18*(1-h))+')';ctx.lineWidth=3;const off=(P.run*30)%70;
+  ctx.fillStyle=mix('#6ab06a','#ffffff',h);ctx.fillRect(0,GROUND,W,H-GROUND);
+  ctx.fillStyle=mix('#4e964e','#ffe6f4',h);ctx.fillRect(0,GROUND,W,12);
+  ctx.strokeStyle='rgba(255,255,255,'+(0.25*(1-h))+')';ctx.lineWidth=3;const off=(P.run*30)%70;
   for(let x=-off;x<W;x+=70){ctx.beginPath();ctx.moveTo(x,GROUND+28);ctx.lineTo(x+34,GROUND+28);ctx.stroke();}ctx.globalAlpha=1;}
  // 천국 구름 바닥 덩어리
  if(h>0.4){ctx.save();ctx.globalAlpha=(h-0.4)*1.4;ctx.fillStyle='rgba(255,255,255,.9)';
@@ -204,17 +206,21 @@ function drawBackground(){
    ctx.arc(x,H-20,70,Math.PI,0);ctx.arc(x+70,H-10,55,Math.PI,0);ctx.fill();}ctx.restore();}
 }
 function drawObs(o){
- if(o.type==='box'){ctx.fillStyle='#3a2a55';ctx.fillRect(o.x,o.y-o.h,o.w,o.h);
-  ctx.fillStyle='#52407a';ctx.fillRect(o.x,o.y-o.h,o.w,9);ctx.strokeStyle='rgba(255,255,255,.25)';ctx.lineWidth=2;ctx.strokeRect(o.x,o.y-o.h,o.w,o.h);
-  ctx.fillStyle='#7ad0ff';ctx.beginPath();ctx.arc(o.x+o.w/2,o.y-o.h/2,7,0,7);ctx.fill();}
- if(o.type==='bat'){ctx.fillStyle='#2a1a45';const cx=o.x+o.w/2,cy=o.y-o.h/2,fl=Math.sin(o.ph*2)*16;
+ if(o.type==='box'){ // 쓰레기통 느낌의 장애물
+  ctx.fillStyle='#5a8fc0';ctx.fillRect(o.x,o.y-o.h,o.w,o.h);
+  ctx.fillStyle='#7fb0dc';ctx.fillRect(o.x,o.y-o.h,o.w,12);
+  ctx.strokeStyle='rgba(255,255,255,.4)';ctx.lineWidth=2;ctx.strokeRect(o.x,o.y-o.h,o.w,o.h);
+  ctx.fillStyle='#ffe14d';ctx.font='bold 22px Trebuchet MS';ctx.textAlign='center';ctx.fillText('✕',o.x+o.w/2,o.y-o.h/2+8);}
+ if(o.type==='bat'){ctx.fillStyle='#5a3a7a';const cx=o.x+o.w/2,cy=o.y-o.h/2,fl=Math.sin(o.ph*2)*16;
   const bw=o.w/2.2, bh=o.h/2.2, wing=o.w*0.5;
   ctx.beginPath();ctx.ellipse(cx,cy,bw,bh,0,0,7);ctx.fill();
   ctx.beginPath();ctx.moveTo(cx,cy);ctx.quadraticCurveTo(cx-wing*0.85,cy-22-fl,cx-wing,cy+10);ctx.quadraticCurveTo(cx-wing*0.5,cy+3,cx,cy);ctx.fill();
   ctx.beginPath();ctx.moveTo(cx,cy);ctx.quadraticCurveTo(cx+wing*0.85,cy-22-fl,cx+wing,cy+10);ctx.quadraticCurveTo(cx+wing*0.5,cy+3,cx,cy);ctx.fill();
   ctx.fillStyle='#ff5a5a';ctx.beginPath();ctx.arc(cx-7,cy-3,4.5,0,7);ctx.arc(cx+7,cy-3,4.5,0,7);ctx.fill();}
- if(o.type==='pit'){ctx.fillStyle='#060a14';ctx.fillRect(o.x,GROUND,o.w,H-GROUND);
-  ctx.strokeStyle='rgba(120,200,220,.4)';ctx.lineWidth=3;
+ if(o.type==='pit'){ // 구덩이(구멍)
+  ctx.fillStyle='#3a2a1a';ctx.fillRect(o.x,GROUND,o.w,H-GROUND);
+  ctx.fillStyle='#241a10';ctx.beginPath();ctx.ellipse(o.x+o.w/2,GROUND+6,o.w/2,14,0,0,Math.PI);ctx.fill();
+  ctx.strokeStyle='rgba(120,90,60,.6)';ctx.lineWidth=3;
   ctx.beginPath();ctx.moveTo(o.x,GROUND);ctx.lineTo(o.x,H);ctx.moveTo(o.x+o.w,GROUND);ctx.lineTo(o.x+o.w,H);ctx.stroke();}
 }
 function drawItem(it){
@@ -292,9 +298,9 @@ function drawCookie(){
  ctx.save();ctx.translate(cx,cy);
  // 캐릭터 뒤 부드러운 빛 후광 (흰 배경을 오라처럼 녹임)
  {const halo=selected===0?'rgba(255,240,180,':'rgba(150,210,255,';
-  const rg=ctx.createRadialGradient(0,0,drawW*0.15,0,0,drawW*0.72);
-  rg.addColorStop(0,halo+'0.55)');rg.addColorStop(0.5,halo+'0.28)');rg.addColorStop(1,halo+'0)');
-  ctx.fillStyle=rg;ctx.beginPath();ctx.arc(0,0,drawW*0.72,0,7);ctx.fill();}
+  const rg=ctx.createRadialGradient(0,0,drawW*0.1,0,0,drawW*0.85);
+  rg.addColorStop(0,halo+'0.85)');rg.addColorStop(0.45,halo+'0.55)');rg.addColorStop(0.8,halo+'0.2)');rg.addColorStop(1,halo+'0)');
+  ctx.fillStyle=rg;ctx.beginPath();ctx.arc(0,0,drawW*0.85,0,7);ctx.fill();}
  // 비닐봉투 흡입 오라
  if(P.bag>0){ctx.save();ctx.globalAlpha=0.35+Math.sin(P.run*3)*0.15;ctx.strokeStyle='#9be0ff';ctx.lineWidth=4;
   for(let i=1;i<=3;i++){ctx.beginPath();ctx.arc(0,0,drawW*0.55+i*16,0,7);ctx.stroke();}ctx.restore();}
