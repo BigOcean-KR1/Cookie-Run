@@ -16,9 +16,10 @@ document.querySelectorAll('.pick').forEach(p=>{
  p.onclick=()=>{document.querySelectorAll('.pick').forEach(x=>x.classList.remove('sel'));
   p.classList.add('sel');selected=+p.dataset.c;};});
 
-const P={x:0,y:0,vy:0,w:90,h:96,jumps:0,sliding:false,hp:100,inv:0,
- mag:0,bag:0,bonus:0,dead:false,run:0,tilt:0,targetY:0};
-let speed,baseSpeed,dist,score,picked,obs,items,parts,clouds,trees,fireflies,
+const P={x:0,y:0,vy:0,w:112,h:118,jumps:0,sliding:false,hp:100,inv:0,
+ mag:0,bag:0,boost:0,bonus:0,bphase:'',dead:false,run:0,tilt:0,targetY:0};
+const BONUS_WORD='BONUSTIME';
+let speed,baseSpeed,dist,score,picked,letters,obs,items,parts,clouds,trees,fireflies,
     spawnT,itemT,running=false,heavenY=0,shake=0;
 const GRAV=2600,JUMP=-900;
 
@@ -28,7 +29,8 @@ const DRINK=['juice','soda','water'];
 
 function reset(){
  P.x=W*0.28;P.y=GROUND;P.vy=0;P.jumps=0;P.sliding=false;P.hp=100;P.inv=0;
- P.mag=0;P.bag=0;P.bonus=0;P.dead=false;P.run=0;P.tilt=0;
+ P.mag=0;P.bag=0;P.boost=0;P.bonus=0;P.bphase='';P.dead=false;P.run=0;P.tilt=0;
+ letters=0;             // 모은 BONUSTIME 글자 수
  baseSpeed=360;speed=baseSpeed;dist=0;score=0;picked=0;
  obs=[];items=[];parts=[];spawnT=0.5;itemT=0.6;heavenY=0;shake=0;
  clouds=[];for(let i=0;i<6;i++)clouds.push({x:Math.random()*W,y:40+Math.random()*H*0.35,s:0.5+Math.random()});
@@ -51,78 +53,106 @@ sz.addEventListener('touchend',slideOff);
 jz.addEventListener('mousedown',jump);sz.addEventListener('mousedown',slideOn);
 addEventListener('mouseup',slideOff);
 
-function burst(x,y,c,n){for(let i=0;i<n;i++)parts.push({x,y,vx:(Math.random()-.5)*320,vy:-Math.random()*340,life:.5,c,r:3+Math.random()*3});}
+function burst(x,y,c,n){/* 파티클 비활성화 */}
 function banner(txt){const b=document.getElementById('banner');b.textContent=txt;
  b.classList.remove('show');void b.offsetWidth;b.classList.add('show');b.style.opacity=1;
  clearTimeout(b._t);b._t=setTimeout(()=>b.style.opacity=0,1100);}
 
 function mkItem(t,x,y){return {kind:'power',type:t,x,y,r:16};}
-function addTrash(x,y){items.push({kind:'trash',type:TRASH[Math.floor(Math.random()*TRASH.length)],x,y,r:13,rot:Math.random()*6});}
+function addTrash(x,y){
+ // 가끔(약 9%) 쓰레기 대신 BONUSTIME 글자를 끼워넣음
+ if(Math.random()<0.09){
+  const ch=BONUS_WORD[Math.floor(Math.random()*BONUS_WORD.length)];
+  items.push({kind:'letter',ch,x,y,r:16});
+ } else {
+  items.push({kind:'trash',type:TRASH[Math.floor(Math.random()*TRASH.length)],x,y,r:13,rot:Math.random()*6});
+ }
+}
 function addDrink(x,y){items.push({kind:'drink',type:DRINK[Math.floor(Math.random()*DRINK.length)],x,y,r:15,rot:0});}
 
-// 점프 포물선을 따라 쓰레기 깔기 (gap=장애물 폭). 점프 물리에 맞춘 곡선.
+// 점프 포물선을 따라 쓰레기 깔기
 function trashArc(x0,gap,peak){
- const n=Math.max(5,Math.round(gap/46));
+ const n=Math.max(7,Math.round(gap/30));
  for(let i=0;i<=n;i++){const t=i/n;
-  // 0~1 구간 포물선: 4t(1-t) → 최고점 peak
   const h=4*t*(1-t)*peak;
   addTrash(x0+t*gap, GROUND-46-h);}
 }
 
 function spawnPattern(){
  const r=Math.random();
- // 가끔 파워업 단독 등장 (보너스/봉투/자석/하트)
- if(r<0.10){items.push(mkItem('fire',W+60,GROUND-120));return;}
- if(r<0.16){items.push(mkItem('bag',W+60,GROUND-120));return;}
- if(r<0.21){items.push(mkItem('magnet',W+60,GROUND-120));return;}
- if(r<0.26){items.push(mkItem('heart',W+60,GROUND-120));return;}
+ if(r<0.05){items.push(mkItem('boost',W+60,GROUND-130));return;}  // 부스터
+ if(r<0.10){items.push(mkItem('bag',W+60,GROUND-120));return;}
+ if(r<0.14){items.push(mkItem('magnet',W+60,GROUND-120));return;}
+ if(r<0.18){items.push(mkItem('heart',W+60,GROUND-120));return;}
 
  const o=Math.random();
- if(o<0.34){ // 큰 상자: 넘는 점프 궤적 따라 쓰레기
+ if(o<0.30){ // 큰 상자: 넘는 점프 궤적 따라 쓰레기
   const bx=W+60;obs.push({type:'box',x:bx,y:GROUND,w:80,h:105});
-  trashArc(bx-90, 260, 200);
- } else if(o<0.62){ // 넓은 구덩이: 2단 점프 궤적 따라 쓰레기
+  trashArc(bx-110, 300, 200);
+ } else if(o<0.55){ // 넓은 구덩이: 2단 점프 궤적
   const pw=210+Math.random()*100, bx=W+60;
   obs.push({type:'pit',x:bx,y:GROUND,w:pw});
-  trashArc(bx-70, pw+140, 300);   // 높이 큰 포물선(2단 점프 유도)
- } else if(o<0.82){ // 박쥐(슬라이드): 낮게 깔린 쓰레기 줄
+  trashArc(bx-80, pw+170, 300);
+ } else if(o<0.74){ // 박쥐(슬라이드): 낮게 깔린 쓰레기 줄
   const bx=W+60;obs.push({type:'bat',x:bx,y:GROUND-120,w:95,h:62,ph:0});
-  for(let i=0;i<7;i++)addTrash(bx-100+i*40, GROUND-46);
- } else { // 평지: 물결 쓰레기 줄
+  for(let i=0;i<14;i++)addTrash(bx-160+i*30, GROUND-46);
+ } else if(o<0.88){ // 공중 장애물(새/연기): 점프해서 넘되 위는 피하기
+  const bx=W+60, ay=GROUND-200;
+  obs.push({type:'cloud',x:bx,y:ay,w:110,h:70,ph:0});
+  // 그 아래 바닥 쓰레기 줄 (낮게 통과)
+  for(let i=0;i<12;i++)addTrash(bx-140+i*32, GROUND-46);
+ } else { // 평지: 긴 물결 쓰레기 줄
   const tier=Math.random();const baseY=tier<0.5?GROUND-46:(tier<0.85?GROUND-150:GROUND-280);
-  const n=6+Math.floor(Math.random()*3);const arcH=baseY<GROUND-200?40:60;
-  for(let i=0;i<n;i++){const arc=Math.sin(i/(n-1)*Math.PI)*arcH;addTrash(W+40+i*46, baseY-arc);}
+  const n=12+Math.floor(Math.random()*5);const arcH=baseY<GROUND-200?40:60;
+  for(let i=0;i<n;i++){const arc=Math.sin(i/(n-1)*Math.PI)*arcH;addTrash(W+40+i*32, baseY-arc);}
  }
 }
 
 function update(dt){
  dist+=speed*dt;P.run+=dt*(speed/baseSpeed)*9;
+
  if(P.bonus>0){
-  P.bonus-=dt;heavenY=Math.min(heavenY+dt*1.6,1);itemT-=dt;
-  if(itemT<=0){itemT=0.16;const yy=H*0.14+Math.random()*H*0.5;addDrink(W+30,yy);}
-  P.targetY=H*0.42+Math.sin(P.run*0.6)*60;P.y+=(P.targetY-P.y)*0.08;P.hp=Math.min(100,P.hp+dt*4);
-  if(P.bonus<=0){heavenY=0;itemT=0.6;P.y=GROUND;P.vy=0;}
+  P.bonus-=dt;itemT-=dt;
+  // 단계: rise(올라감) → fly(천국) → fall(내려옴, 무적+부스터)
+  if(P.bphase==='rise'){
+   heavenY=Math.min(heavenY+dt*1.1,1);
+   P.targetY=H*0.40;P.y+=(P.targetY-P.y)*0.06;
+   if(heavenY>=0.99){P.bphase='fly';}
+  } else if(P.bphase==='fly'){
+   heavenY=1;
+   P.targetY=H*0.40+Math.sin(P.run*0.6)*70;P.y+=(P.targetY-P.y)*0.08;
+   if(P.bonus<1.4){P.bphase='fall';}  // 막바지에 하강 시작
+  } else if(P.bphase==='fall'){
+   heavenY=Math.max(heavenY-dt*0.9,0);
+   P.targetY=GROUND;P.y+=(P.targetY-P.y)*0.07;
+   P.boost=Math.max(P.boost,0.3);P.inv=Math.max(P.inv,0.3); // 내려올 때 무적+부스터 유지
+  }
+  if(itemT<=0){itemT=0.15;const yy=H*0.12+Math.random()*H*0.55;addDrink(W+30,yy);}
+  P.hp=Math.min(100,P.hp+dt*4);
+  if(P.bonus<=0){heavenY=0;itemT=0.6;P.y=GROUND;P.vy=0;P.bphase='';}
  } else {
   heavenY=Math.max(heavenY-dt*1.6,0);
-  // 진행할수록 점진 가속 (기본 360 → 최대 1050)
-  speed=Math.min(baseSpeed+dist*0.018,1050);
+  // 점진 가속 + 부스터면 확 빨라짐
+  speed=Math.min(baseSpeed+dist*0.02,1050)*(P.boost>0?1.8:1);
   P.hp-=dt*2.2;
   P.vy+=GRAV*dt;P.y+=P.vy*dt;
   let onPit=obs.some(o=>o.type==='pit'&&P.x>o.x&&P.x<o.x+o.w);
+  // 부스터 중엔 구덩이도 무시(공중질주)
+  if(P.boost>0){onPit=false;}
   if(P.y>=GROUND&&!onPit){P.y=GROUND;P.vy=0;P.jumps=0;}
   if(P.y>GROUND+90){
-   if(P.inv<=0){P.hp-=30;P.inv=1.5;shake=0.4;banner('⚠️ 구덩이!');burst(P.x,GROUND,'#ff5a5a',12);}
+   if(P.inv<=0){P.hp-=30;P.inv=1.5;shake=0.4;banner('⚠️ 구덩이!');}
    P.y=GROUND;P.vy=JUMP*0.6;P.jumps=1;
   }
   spawnT-=dt;
-  if(spawnT<=0){spawnPattern();spawnT=(1.3+Math.random()*0.7)*(baseSpeed/speed)+0.3;}
+  if(spawnT<=0){spawnPattern();spawnT=(0.8+Math.random()*0.5)*(baseSpeed/speed)+0.2;}
  }
- if(P.mag>0)P.mag-=dt;if(P.bag>0)P.bag-=dt;if(P.inv>0)P.inv-=dt;if(shake>0)shake-=dt;
+ if(P.mag>0)P.mag-=dt;if(P.bag>0)P.bag-=dt;if(P.boost>0)P.boost-=dt;if(P.inv>0)P.inv-=dt;if(shake>0)shake-=dt;
  const wantTilt=P.sliding?-0.5:(P.y<GROUND-5&&P.bonus<=0?-0.12:0.06);P.tilt+=(wantTilt-P.tilt)*0.2;
  const sc=P.bonus>0?speed*1.3:speed;
  obs.forEach(o=>o.x-=sc*dt);obs=obs.filter(o=>o.x+(o.w||0)>-60);
- obs.forEach(o=>{if(o.type==='bat'){o.ph+=dt*4;o.y=GROUND-120+Math.sin(o.ph)*24;}});
- // 쓰레기/아이템도 함께 흘러오게 (이게 빠져 있었음)
+ obs.forEach(o=>{if(o.type==='bat'){o.ph+=dt*4;o.y=GROUND-120+Math.sin(o.ph)*24;}
+  else if(o.type==='cloud'){o.ph+=dt*2;o.y=GROUND-200+Math.sin(o.ph)*18;}});
  items.forEach(it=>it.x-=sc*dt);items=items.filter(it=>it.x>-60);
  clouds.forEach(c=>{c.x-=sc*dt*0.12*c.s;if(c.x<-120)c.x=W+120;});
  trees.forEach(t=>{t.x-=sc*dt*0.4;if(t.x<-160)t.x=W+Math.random()*200;});
@@ -130,16 +160,15 @@ function update(dt){
  const cur=COOKIES[selected];const scale=cur.scale;
  const ph=(P.sliding?P.h*0.5:P.h)*scale, pw=P.w*scale;
  const cyMid=P.y-ph/2;
- // 자석: 끌어당김 / 비닐봉투: 강한 일괄 흡입
  const pull = P.bag>0 ? 0.30 : (P.mag>0 ? 0.14 : 0);
  const radius = P.bag>0 ? 9999 : (P.mag>0 ? 260 : 0);
- if(pull>0){for(const it of items){if(it.kind==='trash'||it.kind==='drink'){
+ if(pull>0){for(const it of items){if(it.kind==='trash'||it.kind==='drink'||it.kind==='letter'){
   const d=Math.hypot(it.x-P.x,it.y-cyMid);if(d<radius){it.x+=(P.x-it.x)*pull;it.y+=(cyMid-it.y)*pull;}}}}
- // 장애물 충돌
- if(P.bonus<=0){const px=P.x-pw/2,py=P.y-ph;
+ // 장애물 충돌 (보너스/부스터 중엔 무시)
+ if(P.bonus<=0 && P.boost<=0){const px=P.x-pw/2,py=P.y-ph;
   for(const o of obs){if(o.type==='pit')continue;
    if(px<o.x+o.w&&px+pw>o.x&&py<o.y&&py+ph>o.y-o.h){
-    if(P.inv<=0){P.hp-=22;P.inv=1.2;shake=0.3;burst(P.x,P.y-40,'#ff5a5a',10);}}}}
+    if(P.inv<=0){P.hp-=22;P.inv=1.2;shake=0.3;}}}}
  // 획득
  const py=P.y-ph;
  items=items.filter(it=>{
